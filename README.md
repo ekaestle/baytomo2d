@@ -62,7 +62,7 @@ There are two example datasets in the folder
 __dataset_eastalps.dat__
 __synthetic_measurements_rayleigh.txt__
 
-These are subsets of the original datasets used in the publication of Kaestle and Tilmann, 2023. You can use them to reproduce Figs.4 and 8 (partially). You should be able to use them for a test run of the program.
+These are subsets of the original datasets used in the publication of Kaestle and Tilmann, 2023. You can use them to partially reproduce Figs. 2 and 6. You should be able to use them for a test run of the program.
 
 
 ## Further information

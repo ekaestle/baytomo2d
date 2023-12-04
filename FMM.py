@@ -14,6 +14,10 @@ from scipy.ndimage import gaussian_filter
 from scipy.interpolate import RectBivariateSpline,RegularGridInterpolator
 #from scipy.integrate import solve_ivp
 import datetime
+try:
+    import pyekfmm
+except:
+    pass
 
 # velocity field v has to be regular of shape (ny,nx), (lats,lons)
 #scikit-fmm only works for regular Cartesian grids, but grid cells may have
@@ -131,7 +135,7 @@ def main():
     plt.text(0,2500,'v=0.01 km/s',rotation=90,color='white')
     plt.gca().set_aspect('equal')
     plt.show()
-    plt.close(fig)
+    #plt.close(fig)
     
     print("test 2")
     v = np.ones_like(X)*3.5
@@ -209,7 +213,7 @@ def main():
     plt.gca().set_aspect('equal')
     plt.colorbar(shrink=0.5)
     plt.show()
-    plt.close(fig)
+    #plt.close(fig)
     
     firstorbit = first_kernel_orbit(Xfine, Yfine, source, receivers[0], 
                                     ttimefield_src, ttimefield_rcv, frequency,
@@ -243,7 +247,7 @@ def main():
     plt.colorbar(shrink=0.5)
     plt.title("First Orbit of Kernel")  
     plt.show()
-    plt.close(fig)
+    #plt.close(fig)
     
     print("test3")
     receiver = np.array(source)+[2500.0,0.]
@@ -284,6 +288,7 @@ def main():
     ax1.set_aspect(asp)
     plt.show() 
     #%%
+    
  
 # smoothing is not used in the actual ttime field calculation below
 def smooth_velocity_field(v,dx,dy,wavelength):
@@ -453,17 +458,8 @@ def calculate_ttime_field_samegrid(X,Y,v,source,refine_source_grid=True,pts_refi
     if xsource > np.max(x) or xsource < np.min(x) or ysource > np.max(y) or ysource < np.min(y):
         raise Exception("Source must be within the coordinate limits!")
     
-    # with the new axis, the resulting traveltime field is equivalent to an interpolated
-    # travel time field on a shifted grid, using a nearest neighbour interpolation.
-    # This means that the source location is correct, with respect to the receiver.
-    # However, there will be an error in the velocity field (which is small for a smooth velocity field)
-    # otherwise: use a fast spline interpolation
     if refine_source_grid:
-        #v_func = RegularGridInterpolator((x,y),v.T,method='linear',bounds_error=False,fill_value=None)
-        #v = v_func((Xnew,Ynew))
-        # Linear interpolation is more exact on very coarse grids...
         v_func = RectBivariateSpline(x,y,v.T)
-        #v = (v_func(x,y)).T
 
     # creating a finer grid around the source and doing the traveltime calculations
     # on this fine grid before expanding to the entire grid
@@ -594,6 +590,55 @@ def calculate_ttime_field_samegrid(X,Y,v,source,refine_source_grid=True,pts_refi
 #    else:
     return ttime_field
 
+# this includes azimuthal anisotropy
+def calculate_ttime_field_aniso(x,y,v,psi2,psi2amp,source):
+    """
+
+    Parameters
+    ----------
+    X : TYPE
+        DESCRIPTION.
+    Y : TYPE
+        DESCRIPTION.
+    v : TYPE
+        DESCRIPTION.
+    psi2 : TYPE
+        in radians, zero is east (x direction), pi/2 is north (y direction).
+    psi2amp : TYPE
+        in relative units (dVs/Vs).
+    source : TYPE
+        DESCRIPTION.
+
+    Raises
+    ------
+    Exception
+        DESCRIPTION.
+
+    Returns
+    -------
+    time (numpy array of same shape as input arrays)
+
+    """
+        
+    xsource = source[0]
+    ysource = source[1]
+    if xsource > np.max(x) or xsource < np.min(x) or ysource > np.max(y) or ysource < np.min(y):
+        raise Exception("Source must be within the coordinate limits!")      
+    dx = x[1]-x[0]
+    dy = y[1]-y[0]
+    if dx!=dy:
+        print(f"Warning: dx and dy should be the same, otherwise pyekfmm may not work correctly ({dx},{dy}).")
+    
+    velx = (v*(1+psi2amp*np.cos(2*psi2))).transpose().flatten(order='F').astype('float32')
+    vely = (v*(1+psi2amp*np.cos(2*(psi2-np.pi/2.)))).transpose().flatten(order='F').astype('float32')
+    eta = (np.ones_like(v)*0).flatten().astype('float32')
+    t=pyekfmm.eikonalvti(velx,vely,eta,xyz=np.array([xsource,0,ysource]),
+                         ax=[x.min(),dx,len(x)],ay=[0,0.05,1],az=[y.min(),dy,len(y)],order=1)
+    time=t.reshape(len(x),len(y),order='F').transpose()
+    
+    return time
+
+
 def calculate_ttime_field_3D(X,Y,Z,V,source,refine_source_grid=True,pts_refine=5):
     
     xsource = source[0]
@@ -602,11 +647,15 @@ def calculate_ttime_field_3D(X,Y,Z,V,source,refine_source_grid=True,pts_refine=5
     x = X[0,:,0]
     y = Y[:,0,0]
     z = Z[0,0,:]
-    if len(np.unique(np.diff(x)))>1 or len(np.unique(np.diff(y)))>1 or len(np.unique(np.diff(z)))>1:
+    dx = np.diff(x)
+    dy = np.diff(y)
+    dz = np.diff(z)
+    if (dx.max()-dx.min() > dx.min()/1000.) or (dy.max()-dy.min() > dy.min()/1000.) or (dz.max()-dz.min() > dz.min()/1000.):
         raise Exception("Grid must be regular in all 3 axes (x,y,z).")
-    dx = x[1]-x[0]
-    dy = y[1]-y[0]
-    dz = z[1]-z[0]
+    
+    dx = dx[0]
+    dy = dy[0]
+    dz = dz[0]
     
     if (xsource > np.max(x) or xsource < np.min(x) or ysource > np.max(y) or
         ysource < np.min(y) or zsource > np.max(z) or zsource < np.min(z) ):
@@ -682,6 +731,56 @@ def calculate_ttime_field_3D(X,Y,Z,V,source,refine_source_grid=True,pts_refine=5
     return ttime_field    
 
 
+# same as calculate_ttime_field_3D but using typical geographic coordinates
+# extra slow because of the additional transformations and interpolations
+def calculate_ttime_field_geographic(LAT,LON,DEPTH,V,source,refine_source_grid=True,pts_refine=5,dx=None,dy=None,dz=None,receiver=None):
+        
+    lat = np.unique(LAT)
+    lon = np.unique(LON)
+    depth = np.unique(DEPTH)
+    
+    # cartesian coordinate system in x,y,z units but irregular spaced
+    Xsph,Ysph,Zsph = geographic2cartesian(LAT,LON,DEPTH)
+    
+    # the grid must be regular, x,y,z are not necessarily horizontal 
+    # and vertical directions anymore, depending where on the sphere we are...
+    if dz is None:
+        dz = np.min(np.diff(depth))
+    if dy is None:
+        dy = np.min(np.diff(lat))*111.19
+    if dx is None:
+        dx = dy
+    x = np.arange(Xsph.min(),Xsph.max()+dx,dx)
+    y = np.arange(Ysph.min(),Ysph.max()+dy,dy)
+    z = np.arange(Zsph.min(),Zsph.max()+dz,dz)
+    Xcart,Ycart,Zcart = np.meshgrid(x,y,z)
+    
+    # interpolate velocity field to the regular cartesian coordinate system
+    LATtrans,LONtrans,Ztrans = cartesian2geographic(Xcart,Ycart,Zcart)
+    func = RegularGridInterpolator((lat,lon,depth),V,
+                                   bounds_error=False,fill_value=1e-3)
+    Vcart = func((LATtrans,LONtrans,Ztrans))
+    
+    # get the traveltime field with the FMM
+    source_cart = geographic2cartesian(source[0],source[1],source[2])
+    ttime_field_cart = calculate_ttime_field_3D(
+        Xcart, Ycart, Zcart, Vcart, source_cart, 
+        refine_source_grid=refine_source_grid,pts_refine=pts_refine)
+    
+    # interpolate back onto geographic coordinate system
+    func = RegularGridInterpolator((y,x,z),ttime_field_cart)
+    ttime_field = func((Ysph,Xsph,Zsph))
+    
+    if receiver is not None:
+        receiver_cart = geographic2cartesian(receiver[0],receiver[1],receiver[2])
+        path_cart = shoot_ray_3D(x, y, z, ttime_field_cart, source_cart, receiver_cart)[0]
+        path_geo = cartesian2geographic(path_cart[:,0],path_cart[:,1],path_cart[:,2])
+        return ttime_field,path_geo,path_cart
+    else:
+        return ttime_field
+
+
+
 def shoot_ray(x,y,ttimefield,source,receivers,stepsize=0.33):
     """
 
@@ -698,8 +797,7 @@ def shoot_ray(x,y,ttimefield,source,receivers,stepsize=0.33):
     receivers : TYPE
         DESCRIPTION.
     stepsize : float, optional
-        Size of the ray tracing step, relative w.r.t. the average grid sampling
-        distance. The default is 0.33, meaning 1/3rd of a cell size.
+        Size of the ray tracing step, relative w.r.t. the average grid sampling distance. The default is 0.33, meaning 1/3rd of a cell size.
 
     Raises
     ------
@@ -718,8 +816,8 @@ def shoot_ray(x,y,ttimefield,source,receivers,stepsize=0.33):
     step_dist = np.sqrt(dx**2+dy**2)*stepsize
 
     grad = np.gradient(ttimefield)
-    spl_x = RectBivariateSpline(x,y,grad[1].T)
-    spl_y = RectBivariateSpline(x,y,grad[0].T*dx/dy)
+    spl_x = RectBivariateSpline(x,y,grad[1].T/dx)
+    spl_y = RectBivariateSpline(x,y,grad[0].T/dy)
     def descent(t,xy):
         return [-spl_x.ev(xy[0],xy[1]),-spl_y.ev(xy[0],xy[1])]
      
@@ -787,102 +885,13 @@ def shoot_ray(x,y,ttimefield,source,receivers,stepsize=0.33):
 #    event.terminal = True
 #    sol = solve_ivp(descent,[0,5000],[receiver[0],receiver[1]],events=event,dense_output=True)
 #    return sol.y.T
-    
-
-# def gaussian_ray_kernel(X,Y,source,receiver,ttimefield_src,
-#                         ttimefield_rcv,f0,v0,nrays=100):
-    
-#     def gauss(dx,sig):
-#         gauss =  (1. / (np.sqrt(2 * np.pi) * sig) * np.exp(
-#                     -0.5 * dx / np.square(sig)))
-#         return gauss
-    
-#     wavelength = 1./f0 * v0
-    
-#     rcvdist = np.sqrt((receiver[0]-X)**2+(receiver[1]-Y)**2)
-#     ttime_rcv = ttimefield_src.flatten()[rcvdist.argmin()] # ttime from src to rcv
-#     phaseshift = ttimefield_src-ttime_rcv
-#     idx = np.where((rcvdist<wavelength/2.)*(np.abs(phaseshift)*2*np.pi*f0<np.pi/2.))
-#     rcvlist = np.column_stack((X[idx],Y[idx]))
-    
-    
-#     paths_src = shoot_ray(X[0],Y[:,0],ttimefield_src,source,rcvlist)
-#     paths_rcv = shoot_ray(X[0],Y[:,0],ttimefield_rcv,receiver,srclist)
-    
-
-#     plt.figure()
-#     plt.contourf(X,Y,ttimefield_src,levels=50)
-#     plt.plot(source[0],source[1],'o')
-#     plt.plot(receiver[0],receiver[1],'o')
-#     for xr,yr in rcvlist:
-#         plt.plot(xr,yr,'r.')
-#     for path in paths_src:
-#         plt.plot(path[:,0],path[:,1],'k',linewidth=0.3)
-#     plt.show()
-
-
-#     path = shoot_ray(X[0],Y[:,0],ttimefield_src,source,receiver)[0]
-#     field = np.abs(ttime_rcv - ttimefield_rcv - ttimefield_src)*2*np.pi*f0/v0
-#     field[field >np.pi/4.] = 0.
-#     plt.figure()
-#     plt.contourf(X,Y,field,levels=50)
-#     plt.plot(source[0],source[1],'o')
-#     plt.plot(receiver[0],receiver[1],'o')
-#     plt.plot(path[:,0],path[:,1],'k',linewidth=0.3)
-#     plt.colorbar()
-#     plt.show()
-
-#     idx = np.where(field <= np.pi/4.)
-#     pnts = np.column_stack((X[idx],Y[idx]))
-#     dists = distance_matrix(pnts,path)
-#     kernel = np.zeros(X.shape)
-#     for pnt in path:
-#         kernel[idx] += gauss(np.sum((pnts-pnt)**2,axis=1),wavelength)
-#     kernel /= np.sum(kernel)
-#     kernel[kernel<0.01*np.max(kernel)] = 0.
-#     plt.figure()
-#     plt.contourf(X,Y,kernel,levels=50)
-#     plt.plot(source[0],source[1],'o')
-#     plt.plot(receiver[0],receiver[1],'o')
-#     plt.plot(path[:,0],path[:,1],'k',linewidth=0.3)
-#     plt.colorbar()
-#     plt.show()
-    
-    
-#     gridtree = cKDTree(np.column_stack((X.flatten(),Y.flatten())))
-#     x = path[:,0]
-#     y = path[:,1]
-#     dx = np.diff(X[0])[0]
-#     dy = np.diff(Y[:,0])[0]
-#     pathdist = np.sum(np.sqrt(np.diff(x)**2 + np.diff(y)**2))
-#     steps = np.linspace(0,1,int(pathdist/np.min([dx/4.,dy/4.])))
-#     steps = steps[1:-1]
-#     x_reg = np.interp(steps,np.linspace(0,1,len(x)),x)
-#     y_reg = np.interp(steps,np.linspace(0,1,len(y)),y)
-    
-#     kernel = np.zeros_like(X)
-#     nndist,nnidx = gridtree.query(np.column_stack((x_reg,y_reg)),k=4)
-#     nndist = 1./nndist**2 / np.sum(1./nndist**2,axis=1).reshape((len(nndist),1))
-#     nndist = nndist.flatten()[nnidx.flatten().argsort()]
-#     nnidx = nnidx.flatten()[nnidx.flatten().argsort()]
-#     nndist = np.split(nndist,np.where(np.diff(nnidx)>0)[0]+1)
-#     nndist = list(map(np.sum,nndist))
-#     nnidx = np.unique(nnidx)
-#     kernel[np.unravel_index(nnidx,X.shape)] = nndist
-#     kernel = gaussian_filter(kernel,sigma=(wavelength/2./dy,
-#                                             wavelength/2./dx),
-#                               mode='constant',truncate=3.0) # sigma=(ysig,xsig)
-#     kernel[kernel<0.01] = 0.
-#     if np.sum(kernel) == 0.:
-#         raise Exception("kernel weights too small")
-#     kernel /= np.sum(kernel)
-#     kernel *= pathdist
-
   
-def shoot_ray_3D(x,y,z,ttimefield,source,receivers,stepsize=0.33):
+def shoot_ray_3D(x,y,z,ttimefield,source,receivers,stepsize=0.5):
     """
     stepsize : float, optional
-        Size of the ray tracing step, relative w.r.t. the average grid sampling distance. The default is 0.33, meaning 1/3rd of a cell size.
+        Size of the ray tracing step. The steps along the path will be such that
+        they are never larger than stepsize*(dx,dy,dz) along any of the three
+        caresian axes.
 
     """
     def running_mean(x, N):
@@ -913,6 +922,7 @@ def shoot_ray_3D(x,y,z,ttimefield,source,receivers,stepsize=0.33):
             if not ray_outside_map:
                 print("Warning! Ray is traced along the map boundary. This may cause problems.")
                 ray_outside_map = True
+                print(yxz)
             return -np.array([xp-source[0],yp-source[1],zp-source[2]])
             # xax = np.linspace(xp-dx,xp+dx,3)
             # yax = np.linspace(yp-dy,yp+dy,3)
@@ -926,7 +936,6 @@ def shoot_ray_3D(x,y,z,ttimefield,source,receivers,stepsize=0.33):
     dx = x[1]-x[0]
     dy = y[1]-y[0]
     dz = z[1]-z[0]
-    step_dist = np.sqrt(dx**2+dy**2+dz**2)*stepsize
 
     grad = np.gradient(ttimefield,dy,dx,dz)
     xgrad = RegularGridInterpolator((y,x,z),grad[1],method='linear')
@@ -948,7 +957,8 @@ def shoot_ray_3D(x,y,z,ttimefield,source,receivers,stepsize=0.33):
         step_inc = 1.
         path = [[receiver[0],receiver[1],receiver[2]]]
         total_dist = np.sqrt((receiver[1]-source[1])**2 + (receiver[0]-source[0])**2 + (receiver[2]-source[2])**2)
-        N = int(total_dist/step_dist*3)
+        # calculate the maximum number of steps that are needed to get from source to receiver times 3
+        N = int(total_dist/(np.min([dx,dy,dz])*stepsize))*3
         if N>100000:
             print("Ray tracing warning: path is sampled with more than 100k steps, consider using a larger stepsize")
         for i in range(N):
@@ -957,15 +967,18 @@ def shoot_ray_3D(x,y,z,ttimefield,source,receivers,stepsize=0.33):
                 raise Exception("ray tracing error")
             dist = np.sqrt((x0-source[0])**2 + (y0-source[1])**2 + (z0-source[2])**2)
             gradx,grady,gradz = descent((y0,x0,z0))
+            # distance of the ray tracing step if following the gradient
             step_distance = np.sqrt(gradx**2+grady**2+gradz**2)
-            step_inc = step_dist/step_distance
+            # step_inc gives the maximum allowed increment so that no step
+            # is larger than stepsize*gridspacing(in x,y,z)
+            step_inc = np.min([dx/np.abs(gradx),dy/np.abs(grady),dz/np.abs(gradz)])*stepsize
             if dist/(step_distance*step_inc) <= 1.:
                 break
 
             path.append([x0+gradx*step_inc,y0+grady*step_inc,z0+gradz*step_inc])
             
             # in vincinity of the source, the traveltimefield is not very exact, just make a straight line jump
-            if np.abs(x0-source[0])<dx/0.5 and np.abs(y0-source[1])<dy/0.5 and np.abs(z0-source[2])<dz/0.5:
+            if np.abs(x0-source[0])<dx and np.abs(y0-source[1])<dy and np.abs(z0-source[2])<dz:
                 break
         else:
             print("ERROR: ray tracing is not converging towards the source!")
@@ -979,18 +992,21 @@ def shoot_ray_3D(x,y,z,ttimefield,source,receivers,stepsize=0.33):
         path_list.append(path)
     return path_list
 
-    # zidx = 20
-    # test = path_list[1]#np.vstack(path)#path_list[0]
-    # plt.figure()
-    # plt.plot(X.flatten(),Y.flatten(),'.',color='lightgrey')
-    # plt.contour(X[:,:,0],Y[:,:,0],ttimefield[:,:,zidx],
-    #                levels=np.linspace(0,np.max(ttime),50))
-    # plt.quiver(X[:,:,0],Y[:,:,0],grad[1][:,:,zidx],grad[0][:,:,zidx],units='xy')
-    # plt.plot(test[:,0],test[:,1])
-    # plt.plot(source[0],source[1],'o')
-    # plt.plot(receiver[0],receiver[1],'o')
-    # plt.gca().set_aspect('equal')
-    # plt.show()
+    """
+    zidx = 20
+    test = path_list[1]#np.vstack(path)#path_list[0]
+    plt.figure()
+    plt.plot(X.flatten(),Y.flatten(),'.',color='lightgrey')
+    plt.contour(X[:,:,0],Y[:,:,0],ttimefield[:,:,zidx],
+                   levels=np.linspace(0,np.max(ttime),50))
+    plt.quiver(X[:,:,0],Y[:,:,0],grad[1][:,:,zidx],grad[0][:,:,zidx],units='xy')
+    plt.plot(test[:,0],test[:,1])
+    plt.plot(source[0],source[1],'o')
+    plt.plot(receiver[0],receiver[1],'o')
+    plt.gca().set_aspect('equal')
+    plt.show()   
+    """
+
 
 
 def analytical_sensitivity_kernel(X,Y,source,receiver,c,f0,gaussfilt=2,
@@ -1532,6 +1548,39 @@ def fat_ray_kernel(X,Y,source,receiver,vel,f0):
     
 #     return path_list
     
+
+
+def geographic2cartesian(lat,lon,depth):
+    # lat,lon,depth -> x,y,z
+    
+    x = (6371.-depth)*np.cos(np.deg2rad(lon))*np.cos(np.deg2rad(lat))
+    y = (6371.-depth)*np.sin(np.deg2rad(lon))*np.cos(np.deg2rad(lat))
+    z = (6371.-depth)*np.sin(np.deg2rad(lat))
+    
+    return (x,y,z)
+
+def cartesian2geographic(x,y,z):
+    # x,y,z -> lat,lon,depth
+    
+    r = np.sqrt(x**2+y**2+z**2)
+    lon = np.rad2deg(np.arctan2(y,x))
+    lat = np.rad2deg(np.arcsin(z/r))
+    depth = 6371.-r
+    
+    return (lat,lon,depth)
+
+def rotate_spherical_coordinates(lat,lon,theta,phi):
+    lat_rad = np.deg2rad(lat)
+    lon_rad = np.deg2rad(lon)
+    theta_rad = np.deg2rad(theta)
+    phi_rad = np.deg2rad(phi)
+    lat_rot = np.arcsin(np.cos(theta_rad)*np.sin(lat_rad) - 
+                        np.cos(lon_rad)*np.sin(theta_rad)*np.cos(lat_rad))
+    lon_rot = np.arctan2(np.sin(lon_rad), np.tan(lat_rad)*np.sin(theta_rad) + 
+                         np.cos(lon_rad)*np.cos(theta_rad)) - phi_rad
+    return np.rad2deg(lat_rot),np.rad2deg(lon_rot)
+    
+
 
 
 if __name__ == "__main__":

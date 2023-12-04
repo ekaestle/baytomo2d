@@ -93,7 +93,7 @@ wavelength_dependent_gridspacing = True # should normally be False
 number_of_iterations = 500000
 
 # number of burnin samples, these samples are discarded
-number_of_burnin_samples = 100000 # has to be smaller than number_of_iterations
+number_of_burnin_samples = 200000 # has to be smaller than number_of_iterations
 
 # number of points (i.e. voronoi cells) at the beginning (can also be 'random',
 # then for each search, a random number in the prior range (below) is chosen)
@@ -174,7 +174,7 @@ else:
     
 # if parallel tempering is True, the algorithm can try to adapt the chain
 # temperatures such that the temperature swap acceptance rate is between 10-30%
-adapt_temperature_profile = True # True or False, has no effect without tempering
+adapt_temperature_profile = False # True or False, has no effect without tempering
 
 # the ray paths are recalculated using the Fast Marching Method (FMM) every
 # update_path_interval iteration (if it is greater than the no of iterations
@@ -194,7 +194,7 @@ kernel_type = 'rays'
 
 # only every collect_step model (after burnin) is used to calculate the average model
 # collect step should be large enough so that models can be considered independent
-collect_step = 200
+collect_step = 500
 
 # parameters that do not influence the result of the model search
 
@@ -226,11 +226,11 @@ min_velocity = 'auto' # set to value in km/s or 'auto'
 max_velocity = 'auto' # set to value in km/s or 'auto'
 # allowed number of points (Voronoi cells in case of nearest neighbor interpolation)
 min_no_points = 10
-max_no_points = 4000
+max_no_points = 5000
 # the following range is only relevant if the data standard deviation is treated
 # as an unknown (hierarchical approach). If data_std_type='fixed', it is ignored.
 min_datastd = 0.01 # expected minimum standard deviation of the input data
-max_datastd = 2.00 # expected maximum standard deviation of the input data
+max_datastd = 1.00 # expected maximum standard deviation of the input data
 
 
 """ # # # # # ANISOTROPIC SEARCH # # # # # """
@@ -241,7 +241,7 @@ anisotropic_search = True
 
 # choose priors for the anisotropic search
 min_aniso_amplitude = 0. # recommended to be zero
-max_aniso_amplitude = 0.05 # 0.1 means 10%
+max_aniso_amplitude = 0.1 # 0.1 means 10%
 proposal_std_aniso_direction = 20/180.*np.pi # 10 degrees
 proposal_std_aniso_amplitude = 0.02 # 0.03 = three percent
 
