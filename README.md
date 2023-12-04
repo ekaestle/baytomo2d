@@ -10,18 +10,18 @@ The functionality of the program goes beyond what is published in the article, t
 
 ## Installation
 
-You need a Python (3.xx) installation and the following Python packages (I recommend installing Anaconda and installing the packages with __conda install package_name__):
-numpy
-scipy
-mpi4py
-matplotlib
-cartopy
-pyproj
-gzip
-cmcrameri (for colormaps https://pypi.org/project/cmcrameri/)
-scikit-fmm (Python implementation of the fast-marching method https://github.com/scikit-fmm/scikit-fmm)
-pyekfmm (optional, for azimuthally anisotropic ray tracing https://github.com/aaspip/pyekfmm)
-pywt (optional, for wavelet parameterization)
+You need a Python (3.xx) installation and the following Python packages (I recommend installing Anaconda and installing the packages with __conda install package_name__):  
+numpy  
+scipy  
+mpi4py  
+matplotlib  
+cartopy  
+pyproj  
+gzip  
+cmcrameri (for colormaps https://pypi.org/project/cmcrameri/)  
+scikit-fmm (Python implementation of the fast-marching method https://github.com/scikit-fmm/scikit-fmm)  
+pyekfmm (optional, for azimuthally anisotropic ray tracing https://github.com/aaspip/pyekfmm)  
+pywt (optional, for wavelet parameterization)  
 
 Once these packages are installed, the tomography scripts simply have to be copied to the folder where they are supposed to be executed. You can run them from a console window by typing
 
@@ -50,7 +50,7 @@ __rjtransdim2d_parameterization.py__
 This script contains several classes, each describing a different parameterization (Voronoi cells = nearest neighbor interpolation, Delaunay triangulation = linear interpolation, blocks, wavelets, etc.). Users can create their own parameterization and add them to this file.
 
 __rjtransdim2d_plot.py__
-This is just a convenience script that calls the plot routing in __rjtransdim2d_helper_classes.py__. Modify path inside the file and run by typing 'python rjtransdim2d_plot.py' in a console window.
+This is just a convenience script that calls the plot routing in rjtransdim2d_helper_classes.py. Modify path inside the file and run by typing 'python rjtransdim2d_plot.py' in a console window.
 
 __FMM.py__
 A collection on functions necessary to calculate the ray paths or the sensitivity kernels.
